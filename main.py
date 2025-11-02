@@ -1,6 +1,5 @@
 # main.py
 import os
-from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -14,20 +13,27 @@ from telegram.ext import (
 # -------------------------------
 # 🔐 Environment & Database Setup
 # -------------------------------
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+# Load .env only when running locally (Railway injects env vars automatically)
+if os.path.exists(".env"):
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("📦 Local .env loaded")
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
+ADMIN_ID = os.environ.get("ADMIN_ID")
 
 if not TELEGRAM_TOKEN:
-    raise ValueError("❌ TELEGRAM_TOKEN not found in .env")
+    raise ValueError("❌ TELEGRAM_TOKEN not found — check Railway Variables tab")
 if not OPENAI_KEY:
-    print("⚠️ Warning: OPENAI_API_KEY not found — voice replies will fail.")
+    print("⚠️ Warning: OPENAI_API_KEY not found — voice replies may fail.")
 
-# Initialize DBs
+# Initialize databases
 from user_tiers import init_db as init_tiers_db
 from utils.user_logs import init_db as init_logs_db
 init_tiers_db()
 init_logs_db()
+
 print("✅ Environment loaded successfully.")
 
 # 🧩 Core Handlers
@@ -67,7 +73,7 @@ async def country_callback(update, context: ContextTypes.DEFAULT_TYPE):
 # 🤖 Main Bot Runner
 # -------------------------------
 def main():
-    """Start the Telegram bot using ApplicationBuilder (PTB v20+)."""
+    """Start the Telegram bot using python-telegram-bot v20+."""
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_TOKEN)
@@ -81,18 +87,16 @@ def main():
     # --- Command Handlers ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("upgrade", upgrade))
+    app.add_handler(CommandHandler("approve", admin_approve))
 
     # --- Message Handlers ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # --- Inline Callbacks ---
+    # --- Inline Button Callbacks ---
     app.add_handler(CallbackQueryHandler(study_level_callback, pattern="^study_"))
     app.add_handler(CallbackQueryHandler(country_callback, pattern="^country_"))
-
-    # --- Admin Commands ---
-    app.add_handler(CommandHandler("approve", admin_approve))
 
     print("🤖 ربات نیکا ویزا با موفقیت اجرا شد...")
 
