@@ -1,3 +1,4 @@
+--upgrade --force-reinstall python-telegram-bot[callback-data]==20.8
 
 
 # Core dependencies
