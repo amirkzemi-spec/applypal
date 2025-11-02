@@ -1,0 +1,20 @@
+# Virtual environments
+venv/
+.env
+__pycache__/
+*.pyc
+
+# Mac system files
+.DS_Store
+
+# Temporary AI / audio outputs
+temp_voice.*
+*.ogg
+*.mp3
+*.wav
+
+# Local databases and indexes
+*.db
+chroma_db/
+utils/vector_index.faiss
+utils/vector_meta.json
