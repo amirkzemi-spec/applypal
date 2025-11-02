@@ -13,33 +13,46 @@ from telegram.ext import (
 # -------------------------------
 # 🔐 Environment & Database Setup
 # -------------------------------
-# Load .env only when running locally (Railway injects env vars automatically)
+
+# Load .env only when running locally
 if os.path.exists(".env"):
     from dotenv import load_dotenv
     load_dotenv()
-    print("📦 Local .env loaded")
+    print("📦 Local .env loaded.")
+else:
+    print("☁️ Running on Railway — environment variables injected automatically.")
 
+# Read environment variables (works on both local + Railway)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
 ADMIN_ID = os.environ.get("ADMIN_ID")
 
+# Validate critical tokens
 if not TELEGRAM_TOKEN:
-    raise ValueError("❌ TELEGRAM_TOKEN not found — check Railway Variables tab")
+    raise ValueError("❌ TELEGRAM_TOKEN not found — please check Railway Variables tab.")
 if not OPENAI_KEY:
-    print("⚠️ Warning: OPENAI_API_KEY not found — voice replies may fail.")
+    print("⚠️ Warning: OPENAI_API_KEY not found — voice replies or GPT features may fail.")
+else:
+    print("✅ OpenAI key detected.")
 
-# Initialize databases
+print("✅ Environment variables loaded successfully.")
+
+# -------------------------------
+# 🗄️ Initialize Databases
+# -------------------------------
 from user_tiers import init_db as init_tiers_db
 from utils.user_logs import init_db as init_logs_db
+
 init_tiers_db()
 init_logs_db()
 
-print("✅ Environment loaded successfully.")
+print("✅ Local databases initialized successfully.")
 
+# -------------------------------
 # 🧩 Core Handlers
+# -------------------------------
 from bot_core.handlers_basic import start, handle_text, handle_voice
 from bot_core.handlers_tiers import upgrade, handle_receipt, admin_approve
-
 
 # -------------------------------
 # 🎓 Inline button callbacks
