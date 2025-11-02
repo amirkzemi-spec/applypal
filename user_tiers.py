@@ -1,0 +1,212 @@
+# user_tiers.py
+import os, sqlite3, datetime
+from dotenv import load_dotenv
+
+# -------------------------------
+# 🔐 Environment & Globals
+# -------------------------------
+load_dotenv()
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+DB_PATH = "users.db"
+
+# -------------------------------
+# 🧠 Tier settings
+# -------------------------------
+TIER_LIMITS = {
+    "free": 10,
+    "starter": 30,
+    "pro": 100
+}
+
+TIER_INFO = {
+    "free": {
+        "name": "رایگان",
+        "price": "۰ تومان",
+        "features": "۱۰ پیام در روز، متنی و صوتی"
+    },
+    "starter": {
+        "name": "استارتر",
+        "price": "۵۹۹,۰۰۰ تومان / ماهانه",
+        "features": "۳۰ پیام در روز، شامل پاسخ صوتی و جستجوی هوشمند"
+    },
+    "pro": {
+        "name": "حرفه‌ای",
+        "price": "۹۹۹,۰۰۰ تومان / ماهانه",
+        "features": "۱۰۰ پیام در روز، شامل همه امکانات و مشاوره تخصصی"
+    }
+}
+
+# -------------------------------
+# 📦 Database helpers
+# -------------------------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            telegram_id INTEGER PRIMARY KEY,
+            tier TEXT DEFAULT 'free',
+            queries_today INTEGER DEFAULT 0,
+            last_reset TEXT,
+            paid_status INTEGER DEFAULT 0,
+            receipt_photo TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def get_user(tg_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE telegram_id=?", (tg_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+def add_or_update_user(tg_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    today = str(datetime.date.today())
+    cur.execute("""
+        INSERT INTO users (telegram_id, last_reset)
+        VALUES (?, ?)
+        ON CONFLICT(telegram_id) DO NOTHING
+    """, (tg_id, today))
+    conn.commit()
+    conn.close()
+
+def reset_if_needed(tg_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    today = str(datetime.date.today())
+    cur.execute("SELECT last_reset FROM users WHERE telegram_id=?", (tg_id,))
+    row = cur.fetchone()
+    if row and row[0] != today:
+        cur.execute("UPDATE users SET queries_today=0, last_reset=? WHERE telegram_id=?", (today, tg_id))
+        conn.commit()
+    conn.close()
+
+def increment_user_query(tg_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET queries_today = queries_today + 1 WHERE telegram_id=?", (tg_id,))
+    conn.commit()
+    conn.close()
+
+# -------------------------------
+# ⏳ Subscription expiry helpers
+# -------------------------------
+def downgrade_user(tg_id):
+    """در صورت اتمام مهلت اشتراک، کاربر به پلن رایگان برگردانده می‌شود."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET tier='free', paid_status=0, queries_today=0 WHERE telegram_id=?",
+        (tg_id,)
+    )
+    conn.commit()
+    conn.close()
+    print(f"🔁 User {tg_id} downgraded to Free (subscription expired).")
+
+
+def mark_paid(tg_id, tier):
+    """ثبت پرداخت و شروع دوره‌ی ۳۰ روزه جدید"""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    today = str(datetime.date.today())
+    cur.execute(
+        "UPDATE users SET tier=?, paid_status=1, last_reset=? WHERE telegram_id=?",
+        (tier, today, tg_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def days_remaining(tg_id):
+    """محاسبه‌ی تعداد روز باقی‌مانده از اشتراک"""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT tier, paid_status, last_reset FROM users WHERE telegram_id=?", (tg_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return 0, "free"
+
+    tier, paid_status, last_reset = row
+    if tier in ["starter", "pro"] and paid_status == 1 and last_reset:
+        try:
+            start_date = datetime.datetime.strptime(last_reset, "%Y-%m-%d").date()
+            elapsed = (datetime.date.today() - start_date).days
+            remaining = max(0, 30 - elapsed)
+            return remaining, tier
+        except Exception:
+            return 0, tier
+    return 0, tier
+
+# -------------------------------
+# 🚦 Main logic
+# -------------------------------
+def check_user_limit(tg_id):
+    """بررسی محدودیت روزانه و تاریخ انقضای اشتراک کاربر"""
+    add_or_update_user(tg_id)
+    reset_if_needed(tg_id)
+    user = get_user(tg_id)
+
+    if not user:
+        return True, "کاربر جدید ثبت شد."
+
+    tier = user[1]
+    queries_today = user[2] or 0
+    limit = TIER_LIMITS.get(tier, 10)
+
+    # 🗓️ بررسی انقضای اشتراک
+    remaining_days, current_tier = days_remaining(tg_id)
+    if current_tier in ["starter", "pro"]:
+        if remaining_days == 0:
+            downgrade_user(tg_id)
+            tier = "free"
+        elif remaining_days <= 3:
+            reminder = (
+                f"📅 اشتراک {TIER_INFO[current_tier]['name']} شما در {remaining_days} روز آینده منقضی می‌شود.\n"
+                "برای تمدید، لطفاً با پشتیبان تماس بگیرید:\n"
+                "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)"
+            )
+            return True, reminder
+
+    # 💬 بررسی محدودیت روزانه
+    if queries_today >= limit:
+        msg = (
+            f"⛔️ شما به سقف مجاز پیام‌های روزانه در پلن {TIER_INFO[tier]['name']} خود رسیده‌اید.\n\n"
+            "🕓 می‌توانید پس از ۲۴ ساعت دوباره تلاش کنید، یا یکی از پلن‌های زیر را فعال نمایید:\n\n"
+            "🟡 پلن استارتر: ۳۰ پیام در روز — ۵۹۹,۰۰۰ تومان / ماهانه\n"
+            "🔵 پلن حرفه‌ای (Pro): ۱۰۰ پیام در روز — ۹۹۹,۰۰۰ تومان / ماهانه\n\n"
+            "برای ارتقا و فعال‌سازی پلن، لطفاً از طریق تلگرام با پشتیبان تماس بگیرید:\n"
+            "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)"
+        )
+        return False, msg
+
+    return True, ""
+
+# -------------------------------
+# 🧾 Tier utilities
+# -------------------------------
+def get_user_tier(tg_id):
+    user = get_user(tg_id)
+    return user[1] if user else "free"
+
+def save_receipt(tg_id, file_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET receipt_photo=? WHERE telegram_id=?", (file_id, tg_id))
+    conn.commit()
+    conn.close()
+
+def upgrade_message():
+    return (
+        "💳 ارتقای پلن:\n\n"
+        "🟡 پلن استارتر — ۵۹۹,۰۰۰ تومان / ماهانه (۳۰ پیام در روز)\n"
+        "🔵 پلن حرفه‌ای — ۹۹۹,۰۰۰ تومان / ماهانه (۱۰۰ پیام در روز)\n\n"
+        "برای ارتقا و تمدید اشتراک، لطفاً از طریق تلگرام با پشتیبان تماس بگیرید:\n"
+        "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)"
+    )
