@@ -58,7 +58,7 @@ async def process_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🎧 Convert AI text → voice and send as Telegram message
 # -----------------------------------------------------------
 async def speak_reply(update, text: str):
-    """Generate TTS reply and send as Telegram voice message (safe on Railway)."""
+    """Generate TTS reply and send as Telegram voice message (Railway-safe)."""
     try:
         await update.message.chat.send_action(action="typing")
         await asyncio.sleep(1.2)
@@ -69,40 +69,44 @@ async def speak_reply(update, text: str):
             await update.message.reply_text(clean_text, parse_mode="Markdown")
             return
 
-        # 🧠 If no audio support, fallback to text only
-        if not AudioSegment:
-            print("🔇 Skipping TTS (AudioSegment not available).")
+        # 🧭 Detect if running on Railway
+        is_railway = os.getenv("RAILWAY_ENVIRONMENT") is not None
+        if is_railway:
+            print("🚀 Detected Railway environment — skipping voice generation.")
             await update.message.reply_text(clean_text, parse_mode="Markdown")
             return
 
-        tts_input = clean_text[:1000]
-        remaining = clean_text[1000:]
-
+        # 🧠 Generate TTS (MP3)
         print("🎤 Generating TTS with OpenAI...")
         mp3_path = Path("temp_voice.mp3")
         wav_path = Path("temp_voice.wav")
         ogg_path = Path("temp_voice.ogg")
 
-        # --- Generate MP3 via OpenAI streaming
         with client.audio.speech.with_streaming_response.create(
             model="gpt-4o-mini-tts",
             voice="alloy",
-            input=tts_input,
+            input=clean_text[:1000],
         ) as response:
             response.stream_to_file(mp3_path)
 
+        # Verify MP3
         if not mp3_path.exists() or mp3_path.stat().st_size < 2000:
             print("⚠️ Empty MP3 file — skipping voice.")
             await update.message.reply_text(clean_text, parse_mode="Markdown")
             return
         print(f"✅ MP3 size: {mp3_path.stat().st_size/1000:.1f} KB")
 
-        # --- Convert MP3 → WAV
+        # Ensure pydub is available
+        if not AudioSegment:
+            print("⚠️ Audio library not available — skipping ffmpeg conversion.")
+            await update.message.reply_text(clean_text, parse_mode="Markdown")
+            return
+
+        # Convert MP3 → WAV → OGG
         AudioSegment.from_file(mp3_path, format="mp3") \
             .set_frame_rate(16000).set_channels(1) \
             .export(wav_path, format="wav")
 
-        # --- Convert WAV → OGG (Opus codec for Telegram)
         subprocess.run([
             "ffmpeg", "-y",
             "-i", str(wav_path),
@@ -114,29 +118,23 @@ async def speak_reply(update, text: str):
             str(ogg_path)
         ], check=True)
 
+        # Verify OGG
         if not ogg_path.exists() or ogg_path.stat().st_size < 2000:
             print("⚠️ Empty OGG file — skipping voice.")
             await update.message.reply_text(clean_text, parse_mode="Markdown")
             return
         print(f"✅ OGG size: {ogg_path.stat().st_size/1000:.1f} KB")
 
-        # --- Send voice to Telegram
+        # Send voice
         with open(ogg_path, "rb") as voice_file:
             await update.message.chat.send_voice(
                 voice=InputFile(voice_file, filename="voice.ogg"),
                 caption="🎧 پاسخ صوتی از نیکا ویزا",
                 parse_mode="Markdown",
             )
+
         print(f"✅ Voice sent successfully ({ogg_path.stat().st_size/1000:.1f} KB)")
         print("📂 Saved temp_voice.ogg for manual inspection — open it to verify sound.")
-
-        # --- Optional cleanup (disabled for debugging)
-        # for f in (mp3_path, wav_path, ogg_path):
-        #     if Path(f).exists(): os.remove(f)
-
-        if remaining:
-            await asyncio.sleep(1)
-            await update.message.reply_text(remaining, parse_mode="Markdown")
 
     except Exception as e:
         print(f"❌ Error in speak_reply: {e}")
