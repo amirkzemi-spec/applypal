@@ -9,5 +9,4 @@ python-docx
 beautifulsoup4
 requests
 tqdm
-pyaudio==0.2.14
 
