@@ -1,5 +1,4 @@
-# Force clean install
---no-cache-dir
+
 
 # Core dependencies
 python-telegram-bot[callback-data]==20.8
