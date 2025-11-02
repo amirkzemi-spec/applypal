@@ -1,7 +1,3 @@
---upgrade --force-reinstall python-telegram-bot[callback-data]==20.8
-
-
-# Core dependencies
 python-telegram-bot[callback-data]==20.8
 openai==2.6.1
 faiss-cpu
