@@ -1,7 +1,7 @@
 import os
 import time
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -12,14 +12,14 @@ from telegram.ext import (
 )
 
 # -------------------------------
-# 🔐 Environment & Setup
+# 🔐 Environment setup
 # -------------------------------
 if os.path.exists(".env"):
     from dotenv import load_dotenv
     load_dotenv()
     print("📦 Local .env loaded.")
 else:
-    print("☁️ Running on Railway — env vars loaded automatically.")
+    print("☁️ Running on Railway — env vars injected automatically.")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
@@ -54,7 +54,7 @@ from bot_core.handlers_tiers import upgrade, handle_receipt, admin_approve
 # -------------------------------
 # 🎓 Inline button callbacks
 # -------------------------------
-async def study_level_callback(update, context: ContextTypes.DEFAULT_TYPE):
+async def study_level_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
@@ -69,7 +69,7 @@ async def study_level_callback(update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(f"🎓 عالی! رشته یا زمینه تحصیلی‌ات چیست؟ ({selected})")
 
 
-async def country_callback(update, context: ContextTypes.DEFAULT_TYPE):
+async def country_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     selected = query.data.split("_")[1]
@@ -79,50 +79,43 @@ async def country_callback(update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # -------------------------------
-# 🤖 Bot Runner with Auto-Restart
+# 🤖 Bot Runner (v20+ clean build)
 # -------------------------------
-def run_bot():
-    """Run the bot and restart automatically if it crashes."""
-    retry_delay = 5  # seconds before retry
-    while True:
-        try:
-            app = (
-                ApplicationBuilder()
-                .token(TELEGRAM_TOKEN)
-                .read_timeout(60)
-                .write_timeout(60)
-                .connect_timeout(30)
-                .build()
-            )
+def main():
+    logging.info("🚀 Starting bot using ApplicationBuilder...")
 
-            # --- Command Handlers ---
-            app.add_handler(CommandHandler("start", start))
-            app.add_handler(CommandHandler("upgrade", upgrade))
-            app.add_handler(CommandHandler("approve", admin_approve))
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .read_timeout(60)
+        .write_timeout(60)
+        .connect_timeout(30)
+        .build()
+    )
 
-            # --- Message Handlers ---
-            app.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
-            app.add_handler(MessageHandler(filters.VOICE, handle_voice))
-            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # --- Command Handlers ---
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("upgrade", upgrade))
+    app.add_handler(CommandHandler("approve", admin_approve))
 
-            # --- Inline Button Callbacks ---
-            app.add_handler(CallbackQueryHandler(study_level_callback, pattern="^study_"))
-            app.add_handler(CallbackQueryHandler(country_callback, pattern="^country_"))
+    # --- Message Handlers ---
+    app.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-            logging.info("🤖 Nika Visa Bot started successfully!")
-            app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
+    # --- Inline Callbacks ---
+    app.add_handler(CallbackQueryHandler(study_level_callback, pattern="^study_"))
+    app.add_handler(CallbackQueryHandler(country_callback, pattern="^country_"))
 
-        except Exception as e:
-            logging.error(f"💥 Bot crashed due to: {e}")
-            logging.info(f"⏳ Restarting in {retry_delay} seconds...")
-            time.sleep(retry_delay)
-            continue
+    logging.info("🤖 Bot is now polling for updates...")
+    app.run_polling()
 
 # -------------------------------
 # 🏁 Entry Point
 # -------------------------------
 if __name__ == "__main__":
     try:
-        run_bot()
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("🛑 Bot stopped manually.")
+        main()
+    except Exception as e:
+        logging.error(f"💥 Bot crashed due to: {e}")
+        time.sleep(5)
