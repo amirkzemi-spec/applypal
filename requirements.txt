@@ -1,0 +1,15 @@
+python-telegram-bot==20.8
+openai==2.6.1
+faiss-cpu
+chromadb==0.4.24
+pydub
+moviepy
+PyMuPDF
+python-docx
+python-dotenv
+requests
+tqdm
+beautifulsoup4
+aiosmtplib==4.0.2
+annotated-types==0.7.0
+argon2-cffi
