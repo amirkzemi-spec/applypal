@@ -1,12 +1,24 @@
+# ---- Core bot and AI ----
 python-telegram-bot[callback-data]==20.8
 openai==2.6.1
+
+# ---- Vector & embedding (RAG) ----
 faiss-cpu
+chromadb==0.4.24     # ✅ stable version compatible with httpx 0.26.x
+
+# ---- File & media handling ----
 pydub
-python-dotenv
 moviepy
 PyMuPDF
 python-docx
-beautifulsoup4
+
+# ---- Utilities ----
+python-dotenv
 requests
 tqdm
-chromadb==0.5.3
+beautifulsoup4
+
+# ---- Async email + misc ----
+aiosmtplib==4.0.2
+annotated-types==0.7.0
+argon2-cffi
