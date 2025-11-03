@@ -1,45 +1,55 @@
 import os
 import tempfile
+import shutil
 from openai import OpenAI
 from pydub import AudioSegment
 
 # -------------------------------------------------
-# 🎧 Setup FFmpeg for Render
+# 🎧 Setup FFmpeg path dynamically (Render / Railway safe)
 # -------------------------------------------------
-# Render places ffmpeg in /usr/bin, so we tell Pydub explicitly
-AudioSegment.converter = "/usr/bin/ffmpeg"
+ffmpeg_path = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg" or "/usr/bin/ffmpeg"
+AudioSegment.converter = ffmpeg_path
+print(f"🎬 Using FFmpeg at: {ffmpeg_path}")
 
-# Initialize OpenAI client
+# -------------------------------------------------
+# 🔑 Initialize OpenAI client
+# -------------------------------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-
 # -------------------------------------------------
-# 🗣️ TTS Generator with Auto-Fallback
+# 🗣️ Main TTS function
 # -------------------------------------------------
 async def speak_reply(text: str) -> str:
     """
-    Generate an OpenAI TTS voice file and return its OGG path for Telegram.
-    If TTS fails, return a plain text message as a backup.
+    Generate an OpenAI TTS voice file (OGG) and return its path for Telegram.
+    If TTS or conversion fails, fall back to a short voice notice.
     """
     try:
         print("🎤 Generating TTS with OpenAI...")
 
-        # Step 1. Generate MP3 using OpenAI
+        # Step 1️⃣ — Generate temporary MP3 file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_mp3:
             response = client.audio.speech.create(
                 model="gpt-4o-mini-tts",
-                voice="alloy",  # other options: "verse", "sage", "soft"
-                input=text[:400]  # limit length to avoid token overflow
+                voice="alloy",  # Voices: alloy, verse, sage, soft
+                input=text[:400]  # Prevent overly long text
             )
+
+            # Debug info for OpenAI response
+            print(f"📦 TTS bytes: {len(response.content) if hasattr(response, 'content') else 'N/A'}")
+
+            # Write bytes to file
             tmp_mp3.write(response.content)
             tmp_mp3.flush()
+            tmp_mp3_path = tmp_mp3.name
 
-        # Step 2. Convert MP3 → OGG for Telegram
-        ogg_path = tmp_mp3.name.replace(".mp3", ".ogg")
-
+        # Step 2️⃣ — Convert MP3 → OGG
+        ogg_path = tmp_mp3_path.replace(".mp3", ".ogg")
         try:
-            AudioSegment.from_mp3(tmp_mp3.name).export(ogg_path, format="ogg")
-            print(f"✅ Voice generated successfully ({os.path.getsize(tmp_mp3.name)/1024:.1f} KB)")
+            AudioSegment.from_mp3(tmp_mp3_path).export(ogg_path, format="ogg")
+            print(f"✅ Voice file generated: {ogg_path} "
+                  f"({os.path.getsize(ogg_path)/1024:.1f} KB)")
+            print(f"🎧 Checking file existence: {os.path.exists(ogg_path)}")
             return ogg_path
 
         except Exception as conv_err:
@@ -47,29 +57,26 @@ async def speak_reply(text: str) -> str:
             raise RuntimeError("FFmpeg conversion failed")
 
     except Exception as e:
-        # Step 3. Auto-fallback to text if any part fails
+        # Step 3️⃣ — Fallback if TTS fails
         print(f"❌ TTS failed: {e}")
-        fallback_path = await _text_to_temp_voice_notice(text)
-        return fallback_path
-
+        import traceback; traceback.print_exc()
+        return await _text_to_temp_voice_notice(text)
 
 # -------------------------------------------------
-# 🩹 Fallback helper — generates a temporary OGG file saying “text only”
+# 🩹 Fallback voice helper
 # -------------------------------------------------
-async def _text_to_temp_voice_notice(text: str) -> str:
+async def _text_to_temp_voice_notice(_: str) -> str:
     """
-    Creates a small OGG file telling user that voice is unavailable,
-    and includes part of the text for continuity.
+    Creates a small OGG file saying “Voice unavailable — message sent as text”.
     """
     fallback_text = (
         "متاسفم، تولید صدا در این لحظه ممکن نیست. "
         "پاسخ به صورت متنی ارسال شد."
     )
-    print("🔁 Falling back to text-only notice...")
+    print("🔁 Falling back to text-only voice notice...")
 
-    # Generate a short spoken message as fallback
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_mp3:
-        try:
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_mp3:
             response = client.audio.speech.create(
                 model="gpt-4o-mini-tts",
                 voice="alloy",
@@ -77,10 +84,14 @@ async def _text_to_temp_voice_notice(text: str) -> str:
             )
             tmp_mp3.write(response.content)
             tmp_mp3.flush()
-            ogg_path = tmp_mp3.name.replace(".mp3", ".ogg")
-            AudioSegment.from_mp3(tmp_mp3.name).export(ogg_path, format="ogg")
-            print("✅ Fallback voice generated successfully.")
-            return ogg_path
-        except Exception as e:
-            print(f"⚠️ Fallback TTS also failed: {e}")
-            return None
+            tmp_mp3_path = tmp_mp3.name
+
+        ogg_path = tmp_mp3_path.replace(".mp3", ".ogg")
+        AudioSegment.from_mp3(tmp_mp3_path).export(ogg_path, format="ogg")
+        print("✅ Fallback voice generated successfully.")
+        return ogg_path
+
+    except Exception as e:
+        print(f"⚠️ Fallback TTS also failed: {e}")
+        import traceback; traceback.print_exc()
+        return None
