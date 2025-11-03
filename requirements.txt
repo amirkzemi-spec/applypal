@@ -1,4 +1,4 @@
-python-telegram-bot==20.8
+python-telegram-bot[callback-data]==21.4
 openai==2.6.1
 faiss-cpu
 chromadb==0.4.24
