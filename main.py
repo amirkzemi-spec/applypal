@@ -1,6 +1,7 @@
-# main.py
 import os
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+import time
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -11,42 +12,38 @@ from telegram.ext import (
 )
 
 # -------------------------------
-# 🔐 Environment & Database Setup
+# 🔐 Environment & Setup
 # -------------------------------
-
-# Load .env only when running locally
 if os.path.exists(".env"):
     from dotenv import load_dotenv
     load_dotenv()
     print("📦 Local .env loaded.")
 else:
-    print("☁️ Running on Railway — environment variables injected automatically.")
+    print("☁️ Running on Railway — env vars loaded automatically.")
 
-# Read environment variables (works on both local + Railway)
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
-ADMIN_ID = os.environ.get("ADMIN_ID")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+ADMIN_ID = os.getenv("ADMIN_ID")
 
-# Validate critical tokens
 if not TELEGRAM_TOKEN:
-    raise ValueError("❌ TELEGRAM_TOKEN not found — please check Railway Variables tab.")
+    raise ValueError("❌ TELEGRAM_TOKEN missing — check Railway Variables tab")
 if not OPENAI_KEY:
-    print("⚠️ Warning: OPENAI_API_KEY not found — voice replies or GPT features may fail.")
-else:
-    print("✅ OpenAI key detected.")
+    print("⚠️ OPENAI_API_KEY missing — GPT or voice features may fail")
 
-print("✅ Environment variables loaded successfully.")
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 
 # -------------------------------
-# 🗄️ Initialize Databases
+# 🗄️ Local DBs
 # -------------------------------
 from user_tiers import init_db as init_tiers_db
 from utils.user_logs import init_db as init_logs_db
 
 init_tiers_db()
 init_logs_db()
-
-print("✅ Local databases initialized successfully.")
+print("✅ Local databases initialized.")
 
 # -------------------------------
 # 🧩 Core Handlers
@@ -81,51 +78,51 @@ async def country_callback(update, context: ContextTypes.DEFAULT_TYPE):
         f"🌍 کشور انتخابی شما: {selected}. لطفاً سطح زبان یا نمره آیلتس خود را بنویسید."
     )
 
-
 # -------------------------------
-# 🤖 Main Bot Runner
+# 🤖 Bot Runner with Auto-Restart
 # -------------------------------
-def main():
-    """Start the Telegram bot using python-telegram-bot v20+."""
-    app = (
-        ApplicationBuilder()
-        .token(TELEGRAM_TOKEN)
-        .read_timeout(60)
-        .write_timeout(60)
-        .connect_timeout(30)
-        .arbitrary_callback_data(True)
-        .build()
-    )
+def run_bot():
+    """Run the bot and restart automatically if it crashes."""
+    retry_delay = 5  # seconds before retry
+    while True:
+        try:
+            app = (
+                ApplicationBuilder()
+                .token(TELEGRAM_TOKEN)
+                .read_timeout(60)
+                .write_timeout(60)
+                .connect_timeout(30)
+                .build()
+            )
 
-    # --- Command Handlers ---
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("upgrade", upgrade))
-    app.add_handler(CommandHandler("approve", admin_approve))
+            # --- Command Handlers ---
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(CommandHandler("upgrade", upgrade))
+            app.add_handler(CommandHandler("approve", admin_approve))
 
-    # --- Message Handlers ---
-    app.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
-    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+            # --- Message Handlers ---
+            app.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
+            app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # --- Inline Button Callbacks ---
-    app.add_handler(CallbackQueryHandler(study_level_callback, pattern="^study_"))
-    app.add_handler(CallbackQueryHandler(country_callback, pattern="^country_"))
+            # --- Inline Button Callbacks ---
+            app.add_handler(CallbackQueryHandler(study_level_callback, pattern="^study_"))
+            app.add_handler(CallbackQueryHandler(country_callback, pattern="^country_"))
 
-    print("🤖 ربات نیکا ویزا با موفقیت اجرا شد...")
+            logging.info("🤖 Nika Visa Bot started successfully!")
+            app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
-    try:
-        app.run_polling(stop_signals=None)
-    except Exception as e:
-        print(f"❌ Unexpected error while running bot: {e}")
-    finally:
-        print("🛑 Bot stopped.")
-
+        except Exception as e:
+            logging.error(f"💥 Bot crashed due to: {e}")
+            logging.info(f"⏳ Restarting in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+            continue
 
 # -------------------------------
 # 🏁 Entry Point
 # -------------------------------
 if __name__ == "__main__":
     try:
-        main()
+        run_bot()
     except (KeyboardInterrupt, SystemExit):
-        print("🛑 Bot stopped manually.")
+        logging.info("🛑 Bot stopped manually.")
