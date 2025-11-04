@@ -1,5 +1,7 @@
 # user_tiers.py
-import os, sqlite3, datetime
+import os
+import sqlite3
+import datetime
 from dotenv import load_dotenv
 
 # -------------------------------
@@ -8,6 +10,10 @@ from dotenv import load_dotenv
 load_dotenv()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 DB_PATH = "users.db"
+
+# Developer/test identities (usernames and numeric IDs)
+# Add additional IDs/usernames as needed for testing
+DEV_IDS = {"@AmirK_19", "AmirK_19", "708110184"}  # keep numeric ID as string for comparison
 
 # -------------------------------
 # 🧠 Tier settings
@@ -55,25 +61,30 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def get_user(tg_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE telegram_id=?", (tg_id,))
+    cur.execute("SELECT telegram_id, tier, queries_today, last_reset, paid_status, receipt_photo FROM users WHERE telegram_id=?", (tg_id,))
     row = cur.fetchone()
     conn.close()
     return row
+
 
 def add_or_update_user(tg_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     today = str(datetime.date.today())
+    # Use INSERT OR IGNORE then ensure last_reset set
     cur.execute("""
-        INSERT INTO users (telegram_id, last_reset)
+        INSERT OR IGNORE INTO users (telegram_id, last_reset)
         VALUES (?, ?)
-        ON CONFLICT(telegram_id) DO NOTHING
     """, (tg_id, today))
+    # If user exists but last_reset is NULL, set it
+    cur.execute("UPDATE users SET last_reset = COALESCE(last_reset, ?) WHERE telegram_id=?", (today, tg_id))
     conn.commit()
     conn.close()
+
 
 def reset_if_needed(tg_id):
     conn = sqlite3.connect(DB_PATH)
@@ -86,10 +97,20 @@ def reset_if_needed(tg_id):
         conn.commit()
     conn.close()
 
+
 def increment_user_query(tg_id):
+    """
+    Increase user's query count by 1 unless the tg_id is a developer/test id.
+    Accepts either numeric tg_id (int) or string. The DB stores numeric IDs.
+    """
+    # Developer bypass: do not increment counter for testing IDs
+    if str(tg_id) in DEV_IDS:
+        print(f"👨‍💻 increment_user_query: developer/test ID {tg_id} — skipping increment.")
+        return
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("UPDATE users SET queries_today = queries_today + 1 WHERE telegram_id=?", (tg_id,))
+    cur.execute("UPDATE users SET queries_today = IFNULL(queries_today, 0) + 1 WHERE telegram_id=?", (tg_id,))
     conn.commit()
     conn.close()
 
@@ -145,10 +166,20 @@ def days_remaining(tg_id):
     return 0, tier
 
 # -------------------------------
-# 🚦 Main logic
+# 🚦 Main logic (single definitive function)
 # -------------------------------
 def check_user_limit(tg_id):
-    """بررسی محدودیت روزانه و تاریخ انقضای اشتراک کاربر"""
+    """
+    بررسی محدودیت روزانه و تاریخ انقضای اشتراک کاربر
+    Returns: (ok: bool, message: str)
+    """
+
+    # Developer bypass (username or numeric id)
+    if str(tg_id) in DEV_IDS:
+        print(f"👨‍💻 Developer bypass active for {tg_id}")
+        return True, "Developer unlimited mode active ✅"
+
+    # Ensure user row exists and reset if a new day
     add_or_update_user(tg_id)
     reset_if_needed(tg_id)
     user = get_user(tg_id)
@@ -156,7 +187,7 @@ def check_user_limit(tg_id):
     if not user:
         return True, "کاربر جدید ثبت شد."
 
-    tier = user[1]
+    tier = user[1] or "free"
     queries_today = user[2] or 0
     limit = TIER_LIMITS.get(tier, 10)
 
@@ -195,12 +226,14 @@ def get_user_tier(tg_id):
     user = get_user(tg_id)
     return user[1] if user else "free"
 
+
 def save_receipt(tg_id, file_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("UPDATE users SET receipt_photo=? WHERE telegram_id=?", (file_id, tg_id))
     conn.commit()
     conn.close()
+
 
 def upgrade_message():
     return (

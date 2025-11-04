@@ -3,95 +3,62 @@ import tempfile
 import shutil
 from openai import OpenAI
 from pydub import AudioSegment
+import traceback, subprocess
 
-# -------------------------------------------------
-# 🎧 Setup FFmpeg path dynamically (Render / Railway safe)
-# -------------------------------------------------
-ffmpeg_path = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg" or "/usr/bin/ffmpeg"
+print("🔊 utils/tts_helper loaded")
+
+ffmpeg_path = shutil.which("ffmpeg") or "/usr/bin/ffmpeg"
 AudioSegment.converter = ffmpeg_path
 print(f"🎬 Using FFmpeg at: {ffmpeg_path}")
 
-# -------------------------------------------------
-# 🔑 Initialize OpenAI client
-# -------------------------------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# -------------------------------------------------
-# 🗣️ Main TTS function
-# -------------------------------------------------
 async def speak_reply(text: str) -> str:
-    """
-    Generate an OpenAI TTS voice file (OGG) and return its path for Telegram.
-    If TTS or conversion fails, fall back to a short voice notice.
-    """
+    """Generate OpenAI TTS (OGG) using streaming API and return file path."""
     try:
-        print("🎤 Generating TTS with OpenAI...")
+        print("🎤 [TTS] called with text length:", len(text))
+        if not text.strip():
+            print("⚠️ [TTS] Empty text, aborting.")
+            return None
 
-        # Step 1️⃣ — Generate temporary MP3 file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_mp3:
-            response = client.audio.speech.create(
-                model="gpt-4o-mini-tts",
-                voice="alloy",  # Voices: alloy, verse, sage, soft
-                input=text[:400]  # Prevent overly long text
-            )
+        # 1️⃣ Generate MP3 via streaming
+        tmp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tmp_mp3.close()
+        tmp_mp3_path = tmp_mp3.name
+        print(f"🧩 [TTS] Temp MP3 path: {tmp_mp3_path}")
 
-            # Debug info for OpenAI response
-            print(f"📦 TTS bytes: {len(response.content) if hasattr(response, 'content') else 'N/A'}")
+        with client.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=text[:1000],
+        ) as response:
+            response.stream_to_file(tmp_mp3_path)
+        print("✅ [TTS] Stream complete, MP3 exists?", os.path.exists(tmp_mp3_path))
 
-            # Write bytes to file
-            tmp_mp3.write(response.content)
-            tmp_mp3.flush()
-            tmp_mp3_path = tmp_mp3.name
+        # check file size
+        if not os.path.exists(tmp_mp3_path) or os.path.getsize(tmp_mp3_path) < 2000:
+            print("⚠️ [TTS] MP3 missing or too small.")
+            return None
 
-        # Step 2️⃣ — Convert MP3 → OGG
+        # 2️⃣ Convert to OGG
         ogg_path = tmp_mp3_path.replace(".mp3", ".ogg")
-        try:
-            AudioSegment.from_mp3(tmp_mp3_path).export(ogg_path, format="ogg")
-            print(f"✅ Voice file generated: {ogg_path} "
-                  f"({os.path.getsize(ogg_path)/1024:.1f} KB)")
-            print(f"🎧 Checking file existence: {os.path.exists(ogg_path)}")
-            return ogg_path
-
-        except Exception as conv_err:
-            print(f"⚠️ Conversion failed: {conv_err}")
-            raise RuntimeError("FFmpeg conversion failed")
-
-    except Exception as e:
-        # Step 3️⃣ — Fallback if TTS fails
-        print(f"❌ TTS failed: {e}")
-        import traceback; traceback.print_exc()
-        return await _text_to_temp_voice_notice(text)
-
-# -------------------------------------------------
-# 🩹 Fallback voice helper
-# -------------------------------------------------
-async def _text_to_temp_voice_notice(_: str) -> str:
-    """
-    Creates a small OGG file saying “Voice unavailable — message sent as text”.
-    """
-    fallback_text = (
-        "متاسفم، تولید صدا در این لحظه ممکن نیست. "
-        "پاسخ به صورت متنی ارسال شد."
-    )
-    print("🔁 Falling back to text-only voice notice...")
-
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_mp3:
-            response = client.audio.speech.create(
-                model="gpt-4o-mini-tts",
-                voice="alloy",
-                input=fallback_text
-            )
-            tmp_mp3.write(response.content)
-            tmp_mp3.flush()
-            tmp_mp3_path = tmp_mp3.name
-
-        ogg_path = tmp_mp3_path.replace(".mp3", ".ogg")
+        print(f"🧩 [TTS] Converting MP3 → OGG at {ogg_path}")
         AudioSegment.from_mp3(tmp_mp3_path).export(ogg_path, format="ogg")
-        print("✅ Fallback voice generated successfully.")
-        return ogg_path
+
+        if os.path.exists(ogg_path):
+            size_kb = os.path.getsize(ogg_path) / 1024
+            print(f"✅ [TTS] OGG generated ({size_kb:.1f} KB)")
+            return ogg_path
+        else:
+            print("❌ [TTS] OGG not created.")
+            return None
 
     except Exception as e:
-        print(f"⚠️ Fallback TTS also failed: {e}")
-        import traceback; traceback.print_exc()
+        print(f"💥 [TTS] Exception: {e}")
+        traceback.print_exc()
+        # optional: verify ffmpeg presence
+        try:
+            print("🔍 FFmpeg version:\n", subprocess.getoutput("ffmpeg -version"))
+        except Exception:
+            pass
         return None

@@ -1,3 +1,8 @@
+import importlib.util, sys
+spec = importlib.util.find_spec("telegram")
+print("📦 telegram module path:", spec.origin if spec else "NOT FOUND")
+print("🐍 Python:", sys.version)
+
 import os
 import time
 import logging
@@ -30,10 +35,14 @@ if not TELEGRAM_TOKEN:
 if not OPENAI_KEY:
     print("⚠️ OPENAI_API_KEY missing — GPT or voice features may fail")
 
+# -------------------------------
+# 🪵 Logging setup
+# -------------------------------
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
+logger = logging.getLogger(__name__)
 
 # -------------------------------
 # 🗄️ Local DBs
@@ -51,10 +60,12 @@ print("✅ Local databases initialized.")
 from bot_core.handlers_basic import start, handle_text, handle_voice
 from bot_core.handlers_tiers import upgrade, handle_receipt, admin_approve
 
+
 # -------------------------------
 # 🎓 Inline button callbacks
 # -------------------------------
 async def study_level_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle study level inline buttons."""
     query = update.callback_query
     await query.answer()
 
@@ -66,23 +77,27 @@ async def study_level_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     }
     selected = level_map.get(query.data, "نامشخص")
     context.user_data["education_level"] = selected
+
     await query.message.reply_text(f"🎓 عالی! رشته یا زمینه تحصیلی‌ات چیست؟ ({selected})")
 
 
 async def country_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle country selection inline buttons."""
     query = update.callback_query
     await query.answer()
     selected = query.data.split("_")[1]
     context.user_data["preferred_country"] = selected
+
     await query.message.reply_text(
         f"🌍 کشور انتخابی شما: {selected}. لطفاً سطح زبان یا نمره آیلتس خود را بنویسید."
     )
 
+
 # -------------------------------
-# 🤖 Bot Runner (v20+ clean build)
+# 🤖 Bot Runner
 # -------------------------------
 def main():
-    logging.info("🚀 Starting bot using ApplicationBuilder...")
+    logger.info("🚀 Starting bot using ApplicationBuilder...")
 
     app = (
         ApplicationBuilder()
@@ -107,8 +122,10 @@ def main():
     app.add_handler(CallbackQueryHandler(study_level_callback, pattern="^study_"))
     app.add_handler(CallbackQueryHandler(country_callback, pattern="^country_"))
 
-    logging.info("🤖 Bot is now polling for updates...")
-    app.run_polling()
+    logger.info("🤖 Bot is now polling for updates (drop_pending_updates=True)...")
+    # ✅ Drop old updates to prevent duplicate /start replies
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
 
 # -------------------------------
 # 🏁 Entry Point
@@ -117,5 +134,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logging.error(f"💥 Bot crashed due to: {e}")
+        logger.error(f"💥 Bot crashed due to: {e}", exc_info=True)
         time.sleep(5)
+        sys.exit(1)
