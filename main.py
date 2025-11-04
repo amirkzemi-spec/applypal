@@ -137,3 +137,4 @@ if __name__ == "__main__":
         logger.error(f"💥 Bot crashed due to: {e}", exc_info=True)
         time.sleep(5)
         sys.exit(1)
+app.add_handler(CommandHandler("stats", show_stats))

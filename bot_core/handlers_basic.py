@@ -176,3 +176,21 @@ async def ask_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌍 علاقه‌مند به تحصیل در کدام کشور هستید؟",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+# in bot_core/handlers_tiers.py or handlers_basic.py
+
+from user_tiers import get_user_count, get_active_users_today
+
+async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_id = int(os.getenv("ADMIN_ID", "0"))
+    if update.message.from_user.id != admin_id:
+        await update.message.reply_text("⛔️ فقط مدیر می‌تواند آمار را ببیند.")
+        return
+
+    total_users = get_user_count()
+    active_today = get_active_users_today()
+
+    await update.message.reply_text(
+        f"📊 آمار نیکا ویزا:\n\n"
+        f"👥 تعداد کل کاربران: {total_users}\n"
+        f"🔥 کاربران فعال امروز: {active_today}"
+    )

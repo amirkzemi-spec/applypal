@@ -243,3 +243,21 @@ def upgrade_message():
         "برای ارتقا و تمدید اشتراک، لطفاً از طریق تلگرام با پشتیبان تماس بگیرید:\n"
         "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)"
     )
+def get_user_count():
+    import sqlite3
+    conn = sqlite3.connect("users.db")
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM users")
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+def get_active_users_today():
+    import sqlite3, datetime
+    today = str(datetime.date.today())
+    conn = sqlite3.connect("users.db")
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM users WHERE last_reset=?", (today,))
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
