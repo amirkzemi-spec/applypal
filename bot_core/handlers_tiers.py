@@ -49,3 +49,50 @@ async def admin_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"کاربر {uid} به سطح {tier} ارتقا یافت ✅")
         except Exception as e:
             await update.message.reply_text(f"⚠️ خطا در تأیید: {e}")
+# -------------------------------------------------
+# 📊 /stats — Admin-only command
+# -------------------------------------------------
+import os
+import sqlite3
+from telegram import Update
+from telegram.ext import ContextTypes
+
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show total users and recent activity (admin only)."""
+    uid = str(update.effective_user.id)
+    if uid != str(ADMIN_ID):
+        await update.message.reply_text("❌ فقط ادمین می‌تواند این دستور را اجرا کند.")
+        return
+
+    try:
+        # --- Count users ---
+        users_conn = sqlite3.connect("users.db")
+        cursor = users_conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
+
+        # --- Count logs ---
+        logs_conn = sqlite3.connect("utils/user_logs.db")
+        lcursor = logs_conn.cursor()
+        lcursor.execute("SELECT COUNT(*) FROM logs")
+        total_queries = lcursor.fetchone()[0]
+
+        # --- Recent 5 users ---
+        cursor.execute("SELECT username, id FROM users ORDER BY id DESC LIMIT 5")
+        recent_users = cursor.fetchall()
+        users_conn.close()
+        logs_conn.close()
+
+        # --- Build response ---
+        msg = f"📊 *Nika Visa Bot Stats*\n\n👥 Total users: {total_users}\n💬 Total queries: {total_queries}\n\n🆕 Recent users:\n"
+        for u in recent_users:
+            uname = u[0] or "—"
+            uid_short = str(u[1])
+            msg += f"- @{uname} ({uid_short})\n"
+
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ خطا در دریافت آمار: {e}")

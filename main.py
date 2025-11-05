@@ -58,7 +58,7 @@ print("✅ Local databases initialized.")
 # 🧩 Core Handlers
 # -------------------------------
 from bot_core.handlers_basic import start, handle_text, handle_voice
-from bot_core.handlers_tiers import upgrade, handle_receipt, admin_approve
+from bot_core.handlers_tiers import upgrade, handle_receipt, admin_approve, show_stats
 
 
 # -------------------------------
@@ -113,6 +113,9 @@ def main():
     app.add_handler(CommandHandler("upgrade", upgrade))
     app.add_handler(CommandHandler("approve", admin_approve))
 
+    # --- Admin control ---
+    app.add_handler(CommandHandler("stats", show_stats))
+
     # --- Message Handlers ---
     app.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
@@ -137,4 +140,4 @@ if __name__ == "__main__":
         logger.error(f"💥 Bot crashed due to: {e}", exc_info=True)
         time.sleep(5)
         sys.exit(1)
-app.add_handler(CommandHandler("stats", show_stats))
+
