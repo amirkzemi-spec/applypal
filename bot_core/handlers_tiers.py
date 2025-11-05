@@ -80,10 +80,12 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_queries = lcursor.fetchone()[0]
 
         # --- Recent 5 users ---
-        cursor.execute("SELECT username, id FROM users ORDER BY id DESC LIMIT 5")
-        recent_users = cursor.fetchall()
+        # Some databases may not have a 'username' column
+        cursor.execute("SELECT id FROM users ORDER BY id DESC LIMIT 5")
+        recent_users = [(None, u[0]) for u in cursor.fetchall()]
         users_conn.close()
         logs_conn.close()
+
 
         # --- Build response ---
         msg = f"📊 *Nika Visa Bot Stats*\n\n👥 Total users: {total_users}\n💬 Total queries: {total_queries}\n\n🆕 Recent users:\n"
