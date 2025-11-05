@@ -168,6 +168,23 @@ def days_remaining(tg_id):
 # -------------------------------
 # 🚦 Main logic (single definitive function)
 # -------------------------------
+import datetime
+from telegram import Bot
+
+DEV_IDS = ["@AmirK_19", "AmirK_19", "708110184"]
+
+# 🚨 Optional: automatic reminder bot instance (if TELEGRAM_TOKEN is available)
+try:
+    from dotenv import load_dotenv
+    import os
+    load_dotenv()
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+    reminder_bot = Bot(token=TELEGRAM_TOKEN)
+except Exception as e:
+    reminder_bot = None
+    print(f"⚠️ Reminder bot not initialized: {e}")
+
+
 def check_user_limit(tg_id):
     """
     بررسی محدودیت روزانه و تاریخ انقضای اشتراک کاربر
@@ -212,12 +229,57 @@ def check_user_limit(tg_id):
             "🕓 می‌توانید پس از ۲۴ ساعت دوباره تلاش کنید، یا یکی از پلن‌های زیر را فعال نمایید:\n\n"
             "🟡 پلن استارتر: ۳۰ پیام در روز — ۵۹۹,۰۰۰ تومان / ماهانه\n"
             "🔵 پلن حرفه‌ای (Pro): ۱۰۰ پیام در روز — ۹۹۹,۰۰۰ تومان / ماهانه\n\n"
-            "برای ارتقا و فعال‌سازی پلن، لطفاً از طریق تلگرام با پشتیبان تماس بگیرید:\n"
-            "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)"
+            "💬 برای مشاوره تخصصی و اقدام رسمی، با تیم نیکا ویزا تماس بگیرید:\n"
+            "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)\n"
+            "☎️ یا شماره: 09910777743"
         )
         return False, msg
 
+    # 💡 Encourage more consultation after 5+ messages (soft reminder)
+    if queries_today in [5, 8]:  # repeat encouragement at these points
+        consult_msg = (
+            "💬 اگر دوست داری پرونده‌ات بررسی تخصصی بشه، "
+            "با مشاوران نیکا ویزا در ارتباط باش:\n"
+            "👉 [@nikavisa_admin](https://t.me/nikavisa_admin)"
+        )
+        return True, consult_msg
+
+    # ✅ Passed all checks
     return True, ""
+
+
+# -------------------------------
+# ⏰ Daily reset reminder (optional)
+# -------------------------------
+def send_daily_reminder():
+    """Send a friendly message to all users when their daily limit resets."""
+    if not reminder_bot:
+        print("⚠️ Reminder bot not initialized; skipping daily reminders.")
+        return
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT telegram_id FROM users")
+        users = [row[0] for row in cur.fetchall()]
+        conn.close()
+
+        for uid in users:
+            try:
+                reminder_bot.send_message(
+                    chat_id=uid,
+                    text=(
+                        "🌞 سلام! محدودیت روزانه ApplyPal امروز دوباره فعال شده 🎉\n"
+                        "می‌تونی دوباره از نیکا ویزا سوال بپرسی یا مشاوره بگیری.\n"
+                        "👩‍💼 برای مشاوره مستقیم: [@nikavisa_admin](https://t.me/nikavisa_admin)"
+                    ),
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                print(f"⚠️ Reminder failed for {uid}: {e}")
+
+    except Exception as e:
+        print(f"❌ Daily reminder error: {e}")
 
 # -------------------------------
 # 🧾 Tier utilities
